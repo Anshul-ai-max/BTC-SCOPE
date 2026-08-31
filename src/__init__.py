@@ -1,0 +1,1 @@
+"""BTC-SCOPE application package."""
