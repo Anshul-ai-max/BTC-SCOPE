@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Generated data (directory placeholders stay tracked)
+data/raw/*.csv
+data/raw/*.parquet
+data/processed/*.csv
+data/processed/*.parquet
+
+# Notebook and OS clutter
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
