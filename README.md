@@ -29,3 +29,13 @@ python -m src.data_generation.generate_dataset --output-dir data/raw --wallet-co
 It produces the five V1 CSV files and a `generation_summary.json`. Generated data is ignored by Git, so the repository remains small.
 
 Scenario labels are deliberate ground truth, not ML features: `normal`, `fan_in`, `fan_out`, `layering`, and `peel_chain`.
+
+## Feature engineering
+
+Create leakage-free wallet features (activity, flow, counterparty, timing, and network diversity):
+
+```powershell
+python -m src.features.build_wallet_features --raw-dir data/raw --output data/processed/wallet_features.csv
+```
+
+`ground_truth.csv` is not read by this command. It is used only later to evaluate a model.
