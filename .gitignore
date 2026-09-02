@@ -8,6 +8,7 @@ data/raw/*.csv
 data/raw/*.parquet
 data/processed/*.csv
 data/processed/*.parquet
+models/*.joblib
 
 # Notebook and OS clutter
 .ipynb_checkpoints/
