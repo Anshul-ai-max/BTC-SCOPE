@@ -39,3 +39,13 @@ python -m src.features.build_wallet_features --raw-dir data/raw --output data/pr
 ```
 
 `ground_truth.csv` is not read by this command. It is used only later to evaluate a model.
+
+## Anomaly scoring
+
+Rank wallets using an explainable, label-free statistical baseline:
+
+```powershell
+python -m src.models.score_anomalies --input data/processed/wallet_features.csv --output data/processed/wallet_anomaly_scores.csv
+```
+
+The score uses transaction velocity, counterparty breadth, network diversity, and net-flow magnitude. It is a review priority, not proof of illicit activity.
