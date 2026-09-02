@@ -70,3 +70,15 @@ python -m src.graph.build_graph_features --transactions data/raw/transactions.cs
 ```
 
 This creates one graph-feature row per wallet. See [docs/graph-features.md](docs/graph-features.md) for feature definitions.
+
+## Combined ML anomaly detection
+
+Merge behavioral and graph features, train Isolation Forest without labels, then evaluate only after scoring:
+
+```powershell
+python -m src.models.build_model_dataset
+python -m src.models.train_anomaly_model
+python -m src.models.evaluate_ml_model
+```
+
+Outputs are `data/processed/model_features.csv`, `models/isolation_forest.joblib`, `data/processed/ml_anomaly_scores.csv`, and `data/processed/ml_model_evaluation.json`. The evaluation JSON compares ROC-AUC, PR-AUC, risk-band precision/recall/F1, and top-k precision/recall against the statistical baseline.
