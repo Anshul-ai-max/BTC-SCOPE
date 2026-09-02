@@ -24,6 +24,7 @@ SCRIPT_TYPES = ("P2WPKH", "P2PKH", "P2TR")
 WALLET_TYPES = ("personal", "exchange", "merchant", "service")
 SCENARIOS = ("normal", "fan_in", "fan_out", "layering", "peel_chain")
 SCENARIO_RATIOS = {"normal": 0.72, "fan_in": 0.08, "fan_out": 0.08, "layering": 0.07, "peel_chain": 0.05}
+ANOMALOUS_WALLET_RATIO = 0.08
 BASE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
@@ -44,6 +45,14 @@ class DatasetGenerator:
         self.transaction_count = transaction_count
         self.rng = random.Random(seed)
         self.wallets = [f"W{i:06d}" for i in range(1, wallet_count + 1)]
+        anomaly_count = max(16, round(wallet_count * ANOMALOUS_WALLET_RATIO))
+        selected = self.rng.sample(self.wallets, anomaly_count)
+        self.scenario_wallets: dict[str, list[str]] = {}
+        for index, scenario in enumerate(("fan_in", "fan_out", "layering", "peel_chain")):
+            start = index * anomaly_count // 4
+            end = (index + 1) * anomaly_count // 4
+            self.scenario_wallets[scenario] = selected[start:end]
+        self.normal_wallets = [wallet for wallet in self.wallets if wallet not in selected]
         self.identities = self._make_identities(max(100, wallet_count // 8))
         self.wallet_identity = {
             wallet: self.rng.choice(self.identities) for wallet in self.wallets
@@ -52,9 +61,20 @@ class DatasetGenerator:
         self.observations: list[dict[str, object]] = []
         self.labels: list[dict[str, object]] = []
         self.wallet_scenarios: dict[str, str] = {wallet: "normal" for wallet in self.wallets}
+        for scenario, wallets in self.scenario_wallets.items():
+            for wallet in wallets:
+                self.wallet_scenarios[wallet] = scenario
+        # Legitimate exchanges, merchants, and services can be highly active.
+        # They introduce benign high-velocity behaviour into the normal class.
+        active_count = max(1, round(len(self.normal_wallets) * 0.08))
+        batch_count = max(1, round(len(self.normal_wallets) * 0.02))
+        self.benign_active_wallets = self.rng.sample(self.normal_wallets, active_count)
+        remaining_normals = [wallet for wallet in self.normal_wallets if wallet not in self.benign_active_wallets]
+        self.benign_batch_wallets = self.rng.sample(remaining_normals, batch_count)
         self.tx_number = 0
         self.obs_number = 0
         self.base_tx_time = BASE_TIME
+        self.tx_scenarios: dict[str, str] = {}
 
     def _make_identities(self, count: int) -> list[NetworkIdentity]:
         identities: list[NetworkIdentity] = []
@@ -96,6 +116,7 @@ class DatasetGenerator:
             "fee_btc": f"{fee:.8f}",
             "script_type": self.rng.choices(SCRIPT_TYPES, weights=(70, 20, 10))[0],
         })
+        self.tx_scenarios[txid] = scenario
         self._add_observation(txid, timestamp, sender)
         if scenario != "normal":
             self.labels.append({
@@ -122,55 +143,78 @@ class DatasetGenerator:
             "country": source.country,
         })
 
-    def _mark_wallets(self, wallets: Iterable[str], scenario: str, start: datetime, end: datetime) -> None:
-        for wallet in set(wallets):
-            self.wallet_scenarios[wallet] = scenario
-            self.labels.append({
-                "entity_id": wallet,
-                "entity_type": "wallet",
-                "scenario": scenario,
-                "start_time": self._iso(start),
-                "end_time": self._iso(end),
-            })
-
     def _normal(self) -> None:
-        sender, receiver = self.rng.sample(self.wallets, 2)
+        # Normal wallets are heterogeneous: most are ordinary peers, while
+        # legitimate services and merchants have heavy, bursty activity.
+        # Occasional anomalous-wallet background transfers avoid isolation.
+        roll = self.rng.random()
+        if roll < 0.10:
+            sender = self.rng.choice(self.benign_batch_wallets)
+            receiver_count = self.rng.randint(3, 6)
+            receivers: set[str] = set()
+            while len(receivers) < receiver_count:
+                receiver = self.rng.choice(self.normal_wallets)
+                if receiver != sender:
+                    receivers.add(receiver)
+            start = self._timestamp()
+            for receiver in receivers:
+                self._add_transaction(
+                    sender, receiver, "normal",
+                    start + timedelta(minutes=self.rng.randint(0, 12)),
+                    self._amount(0.01, 2.0),
+                )
+            return
+        if roll < 0.50:
+            sender = self.rng.choice(self.benign_active_wallets)
+            receiver = self.rng.choice(self.normal_wallets)
+            while receiver == sender:
+                receiver = self.rng.choice(self.normal_wallets)
+        elif roll < 0.65:
+            sender = self.rng.choice(self.benign_batch_wallets)
+            receiver = self.rng.choice(self.normal_wallets)
+            while receiver == sender:
+                receiver = self.rng.choice(self.normal_wallets)
+        else:
+            population = self.normal_wallets if roll < 0.92 else self.wallets
+            sender, receiver = self.rng.sample(population, 2)
         self._add_transaction(sender, receiver, "normal", self._timestamp())
 
     def _fan_in(self) -> None:
-        target = self.rng.choice(self.wallets)
-        senders = self.rng.sample([w for w in self.wallets if w != target], self.rng.randint(4, 8))
+        pool = self.scenario_wallets["fan_in"]
+        target = self.rng.choice(pool)
+        sender_count = min(len(pool) - 1, self.rng.randint(4, 8))
+        senders = self.rng.sample([w for w in pool if w != target], sender_count)
         start = self._timestamp()
         for sender in senders:
             self._add_transaction(sender, target, "fan_in", start + timedelta(minutes=self.rng.randint(0, 15)))
-        self._mark_wallets([*senders, target], "fan_in", start, start + timedelta(minutes=15))
 
     def _fan_out(self) -> None:
-        source = self.rng.choice(self.wallets)
-        receivers = self.rng.sample([w for w in self.wallets if w != source], self.rng.randint(4, 8))
+        pool = self.scenario_wallets["fan_out"]
+        source = self.rng.choice(pool)
+        receiver_count = min(len(pool) - 1, self.rng.randint(4, 8))
+        receivers = self.rng.sample([w for w in pool if w != source], receiver_count)
         start = self._timestamp()
         total = self._amount(0.5, 12.0)
         for receiver in receivers:
             self._add_transaction(source, receiver, "fan_out", start + timedelta(minutes=self.rng.randint(0, 15)), total / len(receivers))
-        self._mark_wallets([source, *receivers], "fan_out", start, start + timedelta(minutes=15))
 
     def _layering(self) -> None:
-        chain = self.rng.sample(self.wallets, self.rng.randint(4, 7))
+        pool = self.scenario_wallets["layering"]
+        chain = self.rng.sample(pool, min(len(pool), self.rng.randint(4, 7)))
         start = self._timestamp()
         amount = self._amount(1.0, 10.0)
         for index, (sender, receiver) in enumerate(zip(chain, chain[1:])):
             amount *= self.rng.uniform(0.965, 0.995)
             self._add_transaction(sender, receiver, "layering", start + timedelta(minutes=2 * index), amount)
-        self._mark_wallets(chain, "layering", start, start + timedelta(minutes=2 * (len(chain) - 1)))
 
     def _peel_chain(self) -> None:
-        chain = self.rng.sample(self.wallets, self.rng.randint(4, 7))
+        pool = self.scenario_wallets["peel_chain"]
+        chain = self.rng.sample(pool, min(len(pool), self.rng.randint(4, 7)))
         start = self._timestamp()
         amount = self._amount(2.0, 15.0)
         for index, (sender, receiver) in enumerate(zip(chain, chain[1:])):
             amount *= self.rng.uniform(0.78, 0.92)
             self._add_transaction(sender, receiver, "peel_chain", start + timedelta(minutes=3 * index), amount)
-        self._mark_wallets(chain, "peel_chain", start, start + timedelta(minutes=3 * (len(chain) - 1)))
 
     def generate(self) -> None:
         builders = {"normal": self._normal, "fan_in": self._fan_in, "fan_out": self._fan_out, "layering": self._layering, "peel_chain": self._peel_chain}
@@ -189,6 +233,16 @@ class DatasetGenerator:
         valid_txids = {row["txid"] for row in self.transactions}
         self.observations = [row for row in self.observations if row["txid"] in valid_txids]
         self.labels = [row for row in self.labels if row["entity_type"] != "transaction" or row["entity_id"] in valid_txids]
+
+    def ground_truth_rows(self) -> list[dict[str, object]]:
+        wallet_labels = [{
+            "entity_id": wallet,
+            "entity_type": "wallet",
+            "scenario": scenario,
+            "start_time": self._iso(BASE_TIME),
+            "end_time": self._iso(self.base_tx_time),
+        } for wallet, scenario in self.wallet_scenarios.items()]
+        return [*wallet_labels, *self.labels]
 
     def wallet_rows(self) -> list[dict[str, object]]:
         return [{
@@ -240,7 +294,7 @@ def main() -> None:
         "transactions.csv": (generator.transactions, ["txid", "timestamp", "input_wallet", "output_wallet", "amount_btc", "fee_btc", "script_type"]),
         "network_observations.csv": (generator.observations, ["observation_id", "timestamp", "txid", "src_ip", "dst_ip", "src_port", "dst_port", "asn", "country"]),
         "wallet_ip_links.csv": (generator.ip_link_rows(), ["wallet_id", "ip", "first_seen", "last_seen", "observation_count"]),
-        "ground_truth.csv": (generator.labels, ["entity_id", "entity_type", "scenario", "start_time", "end_time"]),
+        "ground_truth.csv": (generator.ground_truth_rows(), ["entity_id", "entity_type", "scenario", "start_time", "end_time"]),
     }
     for filename, (rows, fields) in datasets.items():
         write_csv(args.output_dir / filename, rows, fields)
@@ -250,9 +304,10 @@ def main() -> None:
         "transaction_count": len(generator.transactions),
         "network_observation_count": len(generator.observations),
         "wallet_ip_link_count": len(generator.ip_link_rows()),
-        "ground_truth_count": len(generator.labels),
-        "scenario_transaction_counts": dict(Counter(
-            label["scenario"] for label in generator.labels if label["entity_type"] == "transaction"
+        "ground_truth_count": len(generator.ground_truth_rows()),
+        "wallet_scenario_distribution": dict(Counter(generator.wallet_scenarios.values())),
+        "transaction_scenario_distribution": dict(Counter(
+            generator.tx_scenarios[str(row["txid"])] for row in generator.transactions
         )),
     }
     (args.output_dir / "generation_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
