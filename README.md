@@ -59,3 +59,14 @@ python -m src.models.evaluate_anomalies --scores data/processed/wallet_anomaly_s
 ```
 
 The JSON report contains ROC-AUC, confusion matrices, precision, recall, and F1 at score thresholds (50/60/70/80) and top-k review queues (1%, 5%, 10%, 20%).
+
+## Graph analysis
+
+Install the graph dependency once, then build transaction-network features. Ground truth is not read.
+
+```powershell
+python -m pip install -r requirements.txt
+python -m src.graph.build_graph_features --transactions data/raw/transactions.csv --wallets data/raw/wallets.csv --output data/processed/wallet_graph_features.csv
+```
+
+This creates one graph-feature row per wallet. See [docs/graph-features.md](docs/graph-features.md) for feature definitions.
