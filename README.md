@@ -49,3 +49,13 @@ python -m src.models.score_anomalies --input data/processed/wallet_features.csv 
 ```
 
 The score uses transaction velocity, counterparty breadth, network diversity, and net-flow magnitude. It is a review priority, not proof of illicit activity.
+
+## Evaluation
+
+Evaluate saved scores against wallet-level ground truth. Labels are used only in this stage:
+
+```powershell
+python -m src.models.evaluate_anomalies --scores data/processed/wallet_anomaly_scores.csv --ground-truth data/raw/ground_truth.csv --output data/processed/anomaly_evaluation.json
+```
+
+The JSON report contains ROC-AUC, confusion matrices, precision, recall, and F1 at score thresholds (50/60/70/80) and top-k review queues (1%, 5%, 10%, 20%).
