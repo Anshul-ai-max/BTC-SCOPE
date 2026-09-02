@@ -26,7 +26,7 @@ This first version uses only the Python standard library. Run the generator from
 python -m src.data_generation.generate_dataset --output-dir data/raw --wallet-count 5000 --transaction-count 20000 --seed 42
 ```
 
-It produces the five V1 CSV files and a `generation_summary.json`. Generated data is ignored by Git, so the repository remains small.
+It produces the five V1 CSV files and a `generation_summary.json`. Generated data is ignored by Git, so the repository remains small. The generator assigns roughly 92% of wallets as normal and 8% to scenario-driven anomalous behavior; the summary reports both wallet- and transaction-level scenario distributions.
 
 Scenario labels are deliberate ground truth, not ML features: `normal`, `fan_in`, `fan_out`, `layering`, and `peel_chain`.
 
