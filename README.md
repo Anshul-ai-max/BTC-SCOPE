@@ -92,3 +92,13 @@ python -m src.models.risk_scoring
 ```
 
 The result is `data/processed/wallet_risk_scores.csv`. Each wallet has a LOW/MEDIUM/HIGH band and up to five specific contributing reasons. See [docs/risk-scoring.md](docs/risk-scoring.md) for the fixed weights and methodology.
+
+## Read-only API
+
+Start the FastAPI service after the processed outputs exist:
+
+```powershell
+python -m uvicorn src.api.main:app --reload
+```
+
+Examples: `GET /health`, `GET /wallet/W012109`, and `GET /alerts/top?limit=20`. The API reads processed CSV files only; it never reads ground truth. See [docs/api.md](docs/api.md).
