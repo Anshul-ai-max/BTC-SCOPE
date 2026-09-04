@@ -82,3 +82,13 @@ python -m src.models.evaluate_ml_model
 ```
 
 Outputs are `data/processed/model_features.csv`, `models/isolation_forest.joblib`, `data/processed/ml_anomaly_scores.csv`, and `data/processed/ml_model_evaluation.json`. The evaluation JSON compares ROC-AUC, PR-AUC, risk-band precision/recall/F1, and top-k precision/recall against the statistical baseline.
+
+## Risk scoring and explainability
+
+Create a transparent 0–100 review-priority score from existing behavioral, graph, statistical, and ML signals. It does not read ground truth.
+
+```powershell
+python -m src.models.risk_scoring
+```
+
+The result is `data/processed/wallet_risk_scores.csv`. Each wallet has a LOW/MEDIUM/HIGH band and up to five specific contributing reasons. See [docs/risk-scoring.md](docs/risk-scoring.md) for the fixed weights and methodology.
