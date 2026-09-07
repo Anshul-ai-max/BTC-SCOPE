@@ -1,6 +1,6 @@
 # BTC-SCOPE
 
-Synthetic Bitcoin transaction and network-analysis project for SIH26146.
+Synthetic Bitcoin transaction and network-analysis project.
 
 ## Repository layout
 
