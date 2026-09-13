@@ -1,56 +1,104 @@
-# BTC-SCOPE frontend
+# BTC-SCOPE
 
-This is the four-section Next.js dashboard for the synthetic BTC-SCOPE research prototype. The interface is based on the supplied Stitch export in `stitch/`; that export remains a design reference rather than a separate runtime.
+**Bitcoin Transaction Intelligence & Anomaly Investigation Platform**
 
-## Prerequisites
+> AI-powered blockchain monitoring, forensic analysis, and cybersecurity intelligence interface.
 
-- Python with the repository dependencies installed.
-- Node.js 20.9+ and npm.
+---
 
-## Start the complete application
+## ⚠️ Demo Mode Notice
 
-From the repository root, start the existing read-only FastAPI service:
+This frontend currently operates with **synthetic demo data** (offline dataset). No live Bitcoin network monitoring is performed. All data is clearly labelled as synthetic.
 
-```powershell
-python -m uvicorn src.api.main:app --reload
-```
+---
 
-In a second terminal, start the frontend:
+## Tech Stack
 
-```powershell
-cd frontend
-Copy-Item .env.example .env.local
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router, TypeScript) |
+| Styling | Tailwind CSS v4 |
+| Charts | Recharts |
+| Graph | React Flow |
+| Icons | Lucide React |
+| Animations | CSS + Tailwind |
+
+---
+
+## Screens
+
+| Route | Screen |
+|-------|--------|
+| `/` | Command Center / Overview |
+| `/alerts` | Threat Alerts |
+| `/blockchain` | Wallet Investigation (`?wallet=W012109`) |
+| `/network` | Entity Graph (`?focus=W012109`) |
+| `/ai-intelligence` | AI Intelligence Engine |
+| `/transactions` | Transaction Analysis |
+| `/analytics` | Analytics Dashboard |
+| `/data-ingestion` | Data Ingestion Pipeline |
+| `/investigations` | Investigation Workspace |
+| `/network-intel` | Network & Geo Intelligence |
+| `/settings` | Platform Settings |
+
+---
+
+## Backend Integration
+
+All API calls are centralized in [`lib/api.ts`](./lib/api.ts).
+
+Each function gracefully falls back to synthetic demo data when the backend is unavailable.
+
+To connect to your FastAPI backend:
+
+1. Copy `.env.local.example` to `.env.local`
+2. Set `NEXT_PUBLIC_API_URL` to your backend URL
+3. The API functions will automatically switch from mock data to live data
+
+---
+
+## Getting Started
+
+```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000)
 
-## API configuration
+---
 
-`NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000`. Set it in `.env.local` only when FastAPI runs elsewhere:
+## Build
 
-```text
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-The frontend uses a centralized client in `lib/api.ts`. It reads only these FastAPI endpoints:
-
-- `GET /health`
-- `GET /alerts/top?limit=…`
-- `GET /wallet/{wallet_id}`
-- `GET /wallet/{wallet_id}/network?limit=…`
-
-FastAPI allows GET requests from the local Next development server. Neither the frontend nor the API reads `ground_truth.csv`.
-
-## Verification
-
-```powershell
+```bash
 npm run build
+npm start
 ```
 
-The dashboard's current integration verification is the Next.js production build plus the repository's Python test suite. No separate frontend test runner is configured yet; the UI is mostly API-bound composition, and the build catches the relevant TypeScript and route errors.
+---
 
-## Scope
+## Project Structure
 
-The Network screen displays actual, aggregated one-hop synthetic transaction relationships returned by the read-only API. It does not claim real-world attribution, transaction history outside that view, or intelligence not present in the dataset.
+```
+btc-scope/
+├── app/                    # Next.js App Router pages
+│   ├── page.tsx            # Command Center
+│   ├── alerts/             # Threat Alerts
+│   ├── blockchain/         # Wallet Investigation
+│   ├── network/            # Entity Graph
+│   ├── ai-intelligence/    # AI Engine
+│   ├── transactions/       # Transaction Analysis
+│   ├── analytics/          # Analytics
+│   ├── data-ingestion/     # Data Pipeline
+│   ├── investigations/     # Investigation Workspace
+│   ├── network-intel/      # Geo Intelligence
+│   └── settings/           # Settings
+├── components/
+│   ├── layout/             # Sidebar, TopBar
+│   └── ui/                 # Shared UI components
+└── lib/
+    ├── types.ts            # TypeScript interfaces
+    ├── mockData.ts         # Synthetic demo data (replace with API)
+    ├── api.ts              # Backend API service layer
+    └── utils.ts            # Utility functions
+```
