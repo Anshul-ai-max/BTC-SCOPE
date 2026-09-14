@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Search, Clock, AlertTriangle, Info } from "lucide-react";
-import { TRANSACTIONS } from "@/lib/mock-data/transactions";
+import { getTransactions } from "@/lib/api";
+import type { Transaction } from "@/types/btc-scope";
 import { RiskBadge, CopyButton, DatasetBadge } from "@/components/ui";
 import { getRiskColor, formatTimestamp, truncateHash, scoreToRiskBand } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -13,10 +14,17 @@ const TOOLTIP_LIGHT = {
 };
 
 export default function TransactionsPage() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
 
-  const filtered = TRANSACTIONS.filter((tx) => {
+  useEffect(() => {
+    getTransactions(undefined, 100).then(({ transactions: rows, total: count }) => { setTransactions(rows); setTotal(count); }).catch((requestError: Error) => setError(requestError.message));
+  }, []);
+
+  const filtered = transactions.filter((tx) => {
     if (showFlaggedOnly && !tx.flagged) return false;
     if (!search) return true;
     return (
@@ -26,7 +34,7 @@ export default function TransactionsPage() {
     );
   });
 
-  const flaggedCount = TRANSACTIONS.filter((t) => t.flagged).length;
+  const flaggedCount = transactions.filter((t) => t.flagged).length;
 
   return (
     <div className="p-5 space-y-5 min-h-full page-enter">
@@ -39,7 +47,7 @@ export default function TransactionsPage() {
           </div>
           <h1 className="text-[22px] font-bold text-[#111827] tracking-tight">Transactions</h1>
           <p className="text-[#6b7280] text-sm mt-0.5">
-            Showing {filtered.length} of 100,000 · {flaggedCount} flagged
+            Showing {filtered.length} of {total.toLocaleString()} · {flaggedCount} high-risk senders in this view
           </p>
         </div>
         <DatasetBadge />
@@ -48,9 +56,9 @@ export default function TransactionsPage() {
       {/* Stat strip */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Dataset Total",  value: "100,000",                              color: "#0f76ad" },
-          { label: "Flagged (Sample)", value: flaggedCount,                          color: "#dc2626" },
-          { label: "Clean (Sample)", value: TRANSACTIONS.length - flaggedCount,     color: "#059669" },
+          { label: "Dataset Total",  value: total.toLocaleString(),                  color: "#0f76ad" },
+          { label: "High-risk senders (view)", value: flaggedCount,                  color: "#dc2626" },
+          { label: "Other (view)", value: transactions.length - flaggedCount,        color: "#059669" },
         ].map(({ label, value, color }) => (
           <div key={label} className="card p-3 text-center" style={{ borderTopColor: color, borderTopWidth: 2 }}>
             <p className="mono text-lg font-bold" style={{ color }}>{value}</p>
@@ -58,6 +66,8 @@ export default function TransactionsPage() {
           </div>
         ))}
       </div>
+
+      {error && <div className="px-3 py-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] text-[#b91c1c] text-xs">{error}</div>}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">

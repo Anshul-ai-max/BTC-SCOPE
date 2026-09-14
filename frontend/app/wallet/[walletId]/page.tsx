@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -30,7 +30,8 @@ import {
   AnimatedNumber,
   EvidenceBar,
 } from "@/components/ui";
-import { WALLETS, RISK_CONTRIBUTIONS_W012109, WALLET_TIMELINE_W012109 } from "@/lib/mock-data/wallets";
+import { getTransactions, getWallet, getWalletNetwork } from "@/lib/api";
+import type { NetworkNode, RiskContribution, Transaction, Wallet } from "@/types/btc-scope";
 import {
   getRiskColor,
   getRiskBgColor,
@@ -50,9 +51,29 @@ const EVIDENCE_COLORS: Record<string, string> = {
 function WalletInvestigationContent() {
   const params = useParams();
   const walletId = typeof params.walletId === "string" ? params.walletId : "W012109";
-  const wallet = WALLETS.find((w) => w.id === walletId) ?? WALLETS[0];
-  const contributions = walletId === "W012109" ? RISK_CONTRIBUTIONS_W012109 : [];
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [counterparties, setCounterparties] = useState<NetworkNode[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  useEffect(() => {
+    setWallet(null); setCounterparties([]); setTransactions([]); setError(null);
+    Promise.all([getWallet(walletId), getWalletNetwork(walletId), getTransactions(walletId, 100)])
+      .then(([nextWallet, network, transactionResponse]) => { setWallet(nextWallet); setCounterparties(network.nodes.filter((node) => node.id !== walletId)); setTransactions(transactionResponse.transactions); })
+      .catch((requestError: Error) => setError(requestError.message));
+  }, [walletId]);
+
+  const timeline = useMemo(() => Object.values(transactions.reduce<Record<string, { date: string; txCount: number; btcVolume: number }>>((rows, transaction) => {
+    const date = transaction.timestamp.slice(0, 10);
+    const row = rows[date] ?? { date, txCount: 0, btcVolume: 0 };
+    row.txCount += 1; row.btcVolume += transaction.amount; rows[date] = row;
+    return rows;
+  }, {})).sort((left, right) => left.date.localeCompare(right.date)), [transactions]);
+
+  if (error) return <div className="bg-[#0c1220] min-h-full p-5 text-[#fca5a5] text-sm">{error}</div>;
+  if (!wallet) return <div className="bg-[#0c1220] min-h-full p-5 text-[#7d8fa3] text-sm">Loading wallet investigation…</div>;
+  const contributions: RiskContribution[] = [];
 
   const handleCopy = (field: string, value: string) => {
     navigator.clipboard.writeText(value).catch(() => {});
@@ -272,7 +293,6 @@ function WalletInvestigationContent() {
                 { label: "Rapid Activity Score",  value: `${(wallet.behavioralFeatures.rapidActivityScore * 100).toFixed(0)}%`, score: wallet.behavioralFeatures.rapidActivityScore * 100 },
                 { label: "Fan-In Ratio",          value: `${wallet.behavioralFeatures.fanInRatio.toFixed(1)}x`, score: Math.min(100, wallet.behavioralFeatures.fanInRatio * 11.5) },
                 { label: "Fan-Out Ratio",         value: `${wallet.behavioralFeatures.fanOutRatio.toFixed(1)}x`, score: Math.min(100, wallet.behavioralFeatures.fanOutRatio * 8) },
-                { label: "Amount Variance",       value: `${(wallet.behavioralFeatures.amountVariance * 100).toFixed(0)}%`, score: wallet.behavioralFeatures.amountVariance * 100 },
               ].map(({ label, value, score }) => (
                 <div key={label}>
                   <div className="flex items-center justify-between mb-1">
@@ -297,7 +317,7 @@ function WalletInvestigationContent() {
                 { label: "Degree",     value: wallet.graphFeatures.degree },
                 { label: "In-Degree",  value: wallet.graphFeatures.inDegree },
                 { label: "Out-Degree", value: wallet.graphFeatures.outDegree },
-                { label: "Community",  value: wallet.graphFeatures.communityId },
+                { label: "Two-Hop", value: wallet.graphFeatures.twoHopNeighbors ?? "—" },
               ].map(({ label, value }) => (
                 <div key={label} className="p-3 rounded-lg bg-[#0c1220] border border-[#1e2d3d] text-center">
                   <p className="mono text-lg font-bold text-[#818cf8]">{value}</p>
@@ -307,10 +327,10 @@ function WalletInvestigationContent() {
             </div>
             <div className="space-y-3 mt-4">
               {[
-                { label: "Betweenness Centrality", value: wallet.graphFeatures.betweennessCentrality },
-                { label: "Clustering Coefficient", value: wallet.graphFeatures.clusteringCoefficient },
-                { label: "PageRank",               value: wallet.graphFeatures.pageRank },
-              ].map(({ label, value }) => (
+                { label: "Fan-In Score", value: wallet.graphFeatures.fanInScore },
+                { label: "Fan-Out Score", value: wallet.graphFeatures.fanOutScore },
+                { label: "Chain Score", value: wallet.graphFeatures.chainScore },
+              ].filter((metric): metric is { label: string; value: number } => metric.value !== undefined).map(({ label, value }) => (
                 <div key={label}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[#7d8fa3] text-xs">{label}</span>
@@ -373,7 +393,7 @@ function WalletInvestigationContent() {
           <div className="col-span-12 xl:col-span-8 inv-panel p-5">
             <SectionHeader label="TRANSACTION ACTIVITY TIMELINE" />
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={WALLET_TIMELINE_W012109} margin={{ top: 5, right: 5, bottom: 0, left: -15 }}>
+              <AreaChart data={timeline} margin={{ top: 5, right: 5, bottom: 0, left: -15 }}>
                 <defs>
                   <linearGradient id="txGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.25} />
@@ -404,29 +424,23 @@ function WalletInvestigationContent() {
               </Link>
             </SectionHeader>
             <div className="space-y-2">
-              {[
-                { id: "W008834", riskBand: "HIGH",   riskScore: 88.91, txCount: 47 },
-                { id: "W017332", riskBand: "HIGH",   riskScore: 91.4,  txCount: 32 },
-                { id: "W019872", riskBand: "MEDIUM", riskScore: 61.2,  txCount: 18 },
-                { id: "W015678", riskBand: "MEDIUM", riskScore: 58.3,  txCount: 14 },
-                { id: "W011445", riskBand: "LOW",    riskScore: 23.4,  txCount: 7  },
-              ].map((cp) => (
+              {counterparties.slice(0, 5).map((cp) => (
                 <Link
                   key={cp.id}
                   href={`/wallet/${cp.id}`}
                   className="flex items-center gap-3 p-2.5 rounded-lg bg-[#0c1220] border border-[#1e2d3d] hover:border-[#253448] transition-all"
                 >
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getRiskColor(cp.riskBand as "HIGH" | "MEDIUM" | "LOW") }} />
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: getRiskColor(cp.riskBand ?? "LOW") }} />
                   <span className="mono text-[#e8edf5] text-xs flex-1">{cp.id}</span>
-                  <span className="text-[#3f5168] text-[10px]">{cp.txCount} txs</span>
-                  <span className="mono text-xs font-semibold" style={{ color: getRiskColor(cp.riskBand as "HIGH" | "MEDIUM" | "LOW") }}>
-                    {cp.riskScore.toFixed(1)}
+                  <span className="text-[#3f5168] text-[10px]">{cp.connections} txs</span>
+                  <span className="mono text-xs font-semibold" style={{ color: getRiskColor(cp.riskBand ?? "LOW") }}>
+                    {(cp.riskScore ?? 0).toFixed(1)}
                   </span>
                 </Link>
               ))}
             </div>
             <div className="mt-3 pt-3 border-t border-[#1e2d3d] flex items-center justify-between">
-              <span className="text-[#3f5168] text-xs">+{wallet.graphFeatures.degree - 5} more connections</span>
+              <span className="text-[#3f5168] text-xs">+{Math.max(0, wallet.graphFeatures.degree - counterparties.length)} more connections</span>
               <Link href={`/network?focus=${wallet.id}`} className="text-[#38bdf8] text-xs hover:underline">View all</Link>
             </div>
           </div>

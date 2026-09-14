@@ -11,14 +11,16 @@ import {
   ShieldAlert,
   ArrowRight,
 } from "lucide-react";
-import { WALLETS } from "@/lib/mock-data/wallets";
-import { ALERTS } from "@/lib/mock-data/alerts";
+import { getTopAlerts, getWallets } from "@/lib/api";
+import type { Alert, Wallet } from "@/types/btc-scope";
 import { getRiskColor } from "@/lib/utils";
 
 export default function TopBar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -38,19 +40,24 @@ export default function TopBar() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  useEffect(() => {
+    getWallets(100).then(setWallets).catch(() => setWallets([]));
+    getTopAlerts(20).then(setAlerts).catch(() => setAlerts([]));
+  }, []);
+
   const filteredWallets = query.trim()
-    ? WALLETS.filter((w) => w.id.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
+    ? wallets.filter((w) => w.id.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
     : [];
 
   const filteredAlerts = query.trim()
-    ? ALERTS.filter(
+    ? alerts.filter(
         (a) =>
           a.walletId.toLowerCase().includes(query.toLowerCase()) ||
           a.detectionType.toLowerCase().includes(query.toLowerCase())
       ).slice(0, 3)
     : [];
 
-  const newAlertsCount = ALERTS.filter((a) => a.status === "NEW").length;
+  const newAlertsCount = alerts.filter((a) => a.status === "NEW").length;
 
   return (
     <>
@@ -111,7 +118,7 @@ export default function TopBar() {
                 <span className="risk-badge-high">{newAlertsCount} NEW</span>
               </div>
               <div className="max-h-60 overflow-y-auto">
-                {ALERTS.filter((a) => a.status === "NEW").slice(0, 5).map((alert) => (
+                {alerts.filter((a) => a.status === "NEW").slice(0, 5).map((alert) => (
                   <Link
                     key={alert.id}
                     href={`/alerts`}

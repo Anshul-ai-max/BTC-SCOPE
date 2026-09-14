@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   ShieldAlert,
   Activity,
@@ -19,19 +20,11 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { AnimatedNumber, RiskBadge, SectionHeader, StatusDot, DatasetBadge } from "@/components/ui";
-import { ALERTS } from "@/lib/mock-data/alerts";
-import { ACTIVITY_EVENTS } from "@/lib/mock-data/activity";
-import { MODEL_EVALUATIONS } from "@/lib/mock-data/models";
-import { TRANSACTION_TIMELINE } from "@/lib/mock-data/analytics";
+import { getActivity, getAnalytics, getTopAlerts } from "@/lib/api";
+import type { ActivityEvent, Alert, AnalyticsSummary } from "@/types/btc-scope";
 import { getRiskColor, formatRelativeTime } from "@/lib/utils";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const RISK_DIST = [
-  { name: "High Risk",   value: 3873,  color: "#dc2626", pct: "19.37%" },
-  { name: "Medium Risk", value: 8486,  color: "#d97706", pct: "42.43%" },
-  { name: "Low Risk",    value: 7641,  color: "#059669", pct: "38.21%" },
-];
-
 const TOOLTIP_LIGHT = {
   contentStyle: {
     background: "#ffffff",
@@ -45,7 +38,22 @@ const TOOLTIP_LIGHT = {
 };
 
 export default function CommandCenter() {
-  const newAlerts = ALERTS.filter((a) => a.status === "NEW").length;
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.all([getAnalytics(), getTopAlerts(20), getActivity()])
+      .then(([summary, nextAlerts, events]) => { setAnalytics(summary); setAlerts(nextAlerts); setActivity(events); })
+      .catch((requestError: Error) => setError(requestError.message));
+  }, []);
+  const distribution = analytics?.riskDistribution ?? { high: 0, medium: 0, low: 0, total: 0 };
+  const RISK_DIST = [
+    { name: "High Risk", value: distribution.high, color: "#dc2626", pct: distribution.total ? `${((distribution.high / distribution.total) * 100).toFixed(2)}%` : "—" },
+    { name: "Medium Risk", value: distribution.medium, color: "#d97706", pct: distribution.total ? `${((distribution.medium / distribution.total) * 100).toFixed(2)}%` : "—" },
+    { name: "Low Risk", value: distribution.low, color: "#059669", pct: distribution.total ? `${((distribution.low / distribution.total) * 100).toFixed(2)}%` : "—" },
+  ];
+  const newAlerts = alerts.length;
 
   return (
     <div className="p-5 space-y-5 min-h-full page-enter">
@@ -69,15 +77,16 @@ export default function CommandCenter() {
           <DatasetBadge />
         </div>
       </div>
+      {error && <div className="px-3 py-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] text-[#b91c1c] text-xs">{error}</div>}
 
       {/* ─── KPI strip ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 stagger-children">
         {[
-          { label: "Wallets",         value: 20000,  color: "#0f76ad", sub: "Entities analysed"      },
-          { label: "Transactions",    value: 100000, color: "#0f76ad", sub: "Synthetic dataset"       },
-          { label: "HIGH Risk",       value: 3873,   color: "#dc2626", sub: "19.37% · needs review"  },
-          { label: "MEDIUM Risk",     value: 8486,   color: "#d97706", sub: "42.43%"                 },
-          { label: "Investigations",  value: 47,     color: "#6366f1", sub: "Open cases"             },
+          { label: "Wallets",         value: analytics?.totalWallets ?? 0,  color: "#0f76ad", sub: "Entities analysed"      },
+          { label: "Transactions",    value: analytics?.totalTransactions ?? 0, color: "#0f76ad", sub: "Synthetic dataset"       },
+          { label: "HIGH Risk",       value: distribution.high, color: "#dc2626", sub: "Risk-scoring output"  },
+          { label: "MEDIUM Risk",     value: distribution.medium, color: "#d97706", sub: "Risk-scoring output" },
+          { label: "Investigations",  value: "—", color: "#6366f1", sub: "Not tracked by API" },
           { label: "New Alerts",      value: newAlerts, color: "#dc2626", sub: "Pending review"      },
         ].map(({ label, value, color, sub }) => (
           <div
@@ -86,7 +95,7 @@ export default function CommandCenter() {
           >
             <div className="absolute top-0 left-0 right-0 h-[2px] rounded-t-[10px]" style={{ background: color }} />
             <p className="mono text-[20px] font-bold leading-none mt-1" style={{ color }}>
-              <AnimatedNumber value={value} duration={900} />
+              {typeof value === "number" ? <AnimatedNumber value={value} duration={900} /> : value}
             </p>
             <p className="text-[#4b5563] text-[11.5px] mt-1.5 font-medium leading-snug">{label}</p>
             <p className="text-[#9ca3af] text-[10px] mt-0.5 leading-snug">{sub}</p>
@@ -114,7 +123,7 @@ export default function CommandCenter() {
             </div>
           </SectionHeader>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={TRANSACTION_TIMELINE} margin={{ top: 5, right: 5, bottom: 0, left: -22 }}>
+              <AreaChart data={analytics?.transactionTimeline ?? []} margin={{ top: 5, right: 5, bottom: 0, left: -22 }}>
               <defs>
                 <linearGradient id="gN" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#0f76ad" stopOpacity={0.18} />
@@ -175,7 +184,7 @@ export default function CommandCenter() {
             </Link>
           </SectionHeader>
           <div className="space-y-1.5">
-            {ALERTS.filter((a) => a.riskBand === "HIGH").slice(0, 5).map((alert) => (
+            {alerts.filter((a) => a.riskBand === "HIGH").slice(0, 5).map((alert) => (
               <Link
                 key={alert.id}
                 href={`/wallet/${alert.walletId}`}
@@ -203,7 +212,7 @@ export default function CommandCenter() {
             <Link href="/ai-intelligence" className="text-[#6366f1] text-xs hover:opacity-80">Details →</Link>
           </SectionHeader>
           <div className="space-y-5">
-            {MODEL_EVALUATIONS.map((model) => (
+            {(analytics?.modelComparison ?? []).map((model) => (
               <div key={model.modelName}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -245,7 +254,7 @@ export default function CommandCenter() {
             <div className="live-dot" />
           </SectionHeader>
           <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-            {ACTIVITY_EVENTS.map((event) => (
+            {activity.map((event) => (
               <div
                 key={event.id}
                 className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#f7f8fa] transition-colors"
@@ -297,10 +306,10 @@ export default function CommandCenter() {
         </SectionHeader>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Graph Nodes",         value: "20,000",   icon: Share2,        color: "#0f76ad" },
-            { label: "Transaction Edges",    value: "148,492",  icon: TrendingUp,    color: "#6366f1" },
-            { label: "Suspicious Clusters",  value: "247",      icon: ShieldAlert,   color: "#dc2626" },
-            { label: "Isolated Anomalies",   value: "1,834",    icon: AlertTriangle, color: "#d97706" },
+            { label: "Graph Nodes",       value: (analytics?.totalWallets ?? 0).toLocaleString(), icon: Share2, color: "#0f76ad" },
+            { label: "Transaction Edges", value: (analytics?.totalTransactions ?? 0).toLocaleString(), icon: TrendingUp, color: "#6366f1" },
+            { label: "HIGH Risk Wallets", value: distribution.high.toLocaleString(), icon: ShieldAlert, color: "#dc2626" },
+            { label: "MEDIUM Risk Wallets", value: distribution.medium.toLocaleString(), icon: AlertTriangle, color: "#d97706" },
           ].map(({ label, value, icon: Icon, color }) => (
             <div
               key={label}

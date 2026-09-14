@@ -1,135 +1,110 @@
-/**
- * BTC-SCOPE API Service Layer
- *
- * Architecture: PAGE → API FUNCTION → TYPED DATA → UI COMPONENT
- *
- * All functions currently return synthetic mock data.
- * To connect to the FastAPI backend, replace the fallback values with
- * real fetch() calls to `${BASE_URL}/api/...`.
- *
- * Base URL: process.env.NEXT_PUBLIC_API_URL (default: http://localhost:8000)
- */
+/** Typed client for the read-only BTC-SCOPE FastAPI service. */
 
-import type {
-  Wallet,
-  Alert,
-  Transaction,
-  NetworkNode,
-  NetworkEdge,
-  ModelEvaluation,
-  ActivityEvent,
-  SystemStats,
-  AnalyticsSummary,
-  NetworkIntelligenceSummary,
-  RiskContribution,
-} from "@/types/btc-scope";
+import type { Alert, AnalyticsSummary, ActivityEvent, ModelEvaluation, NetworkEdge, NetworkIntelligenceSummary, NetworkNode, SystemStats, Transaction, Wallet } from "@/types/btc-scope";
 
-import {
-  WALLETS,
-  RISK_CONTRIBUTIONS_W012109,
-  ALERTS,
-  TRANSACTIONS,
-  NETWORK_NODES,
-  NETWORK_EDGES,
-  NETWORK_INTEL,
-  MODEL_EVALUATIONS,
-  ANALYTICS_SUMMARY,
-  ACTIVITY_EVENTS,
-  SYSTEM_STATS,
-} from "./mock-data";
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-/** Generic fetch with automatic mock fallback when backend is unavailable. */
-async function apiFetch<T>(path: string, fallback: T, options?: RequestInit): Promise<T> {
-  try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } catch {
-    return fallback;
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
   }
 }
 
-// ─── System ───────────────────────────────────────────────────────────────────
+async function request<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { headers: { Accept: "application/json" }, cache: "no-store" });
+  } catch {
+    throw new ApiError(0, "BTC-SCOPE API is unreachable. Start FastAPI or check NEXT_PUBLIC_API_URL.");
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new ApiError(response.status, body?.detail ?? `API request failed (${response.status}).`);
+  }
+  return response.json() as Promise<T>;
+}
+
+type RawWallet = {
+  wallet_id: string; risk_score: number; risk_band: "LOW" | "MEDIUM" | "HIGH"; reasons: string[];
+  created_at: string; last_seen: string;
+  behavioral_metrics: Record<string, number>; graph_metrics: Record<string, number>;
+  anomaly_scores: { statistical: number; isolation_forest: number };
+};
+
+function numberAt(row: Record<string, number>, key: string) { return row[key] ?? 0; }
+
+function toWallet(raw: RawWallet): Wallet {
+  const behavior = raw.behavioral_metrics;
+  const graph = raw.graph_metrics;
+  return {
+    id: raw.wallet_id, riskScore: raw.risk_score, riskBand: raw.risk_band,
+    totalTransactions: numberAt(behavior, "tx_count"),
+    totalBTC: numberAt(behavior, "sent_btc") + numberAt(behavior, "received_btc"),
+    firstSeen: raw.created_at, lastSeen: raw.last_seen, flagReasons: raw.reasons,
+    behavioralFeatures: {
+      transactionFrequency: numberAt(behavior, "tx_count") / Math.max(1, numberAt(behavior, "active_days")),
+      avgTransactionAmount: numberAt(behavior, "avg_sent_btc"),
+      maxTransactionAmount: numberAt(graph, "max_sent_amount"),
+      rapidActivityScore: numberAt(behavior, "rapid_tx_pairs_15m") / Math.max(1, numberAt(behavior, "tx_count") - 1),
+      fanInRatio: numberAt(graph, "fan_in_score"), fanOutRatio: numberAt(graph, "fan_out_score"),
+    },
+    graphFeatures: {
+      degree: numberAt(graph, "total_degree"), inDegree: numberAt(graph, "in_degree"), outDegree: numberAt(graph, "out_degree"),
+      twoHopNeighbors: numberAt(graph, "two_hop_neighbors"), fanInScore: numberAt(graph, "fan_in_score"),
+      fanOutScore: numberAt(graph, "fan_out_score"), chainScore: numberAt(graph, "chain_score"),
+    },
+    anomalyScores: { statisticalAnomaly: raw.anomaly_scores.statistical, isolationForest: raw.anomaly_scores.isolation_forest, overallRisk: raw.risk_score },
+  };
+}
+
 export async function getHealth(): Promise<SystemStats> {
-  return apiFetch("/api/stats", SYSTEM_STATS);
+  const data = await request<{ status: "OPERATIONAL"; wallet_count: number; transaction_count: number; risk_distribution: { high: number; medium: number; low: number } }>("/stats");
+  return { totalWallets: data.wallet_count, totalTransactions: data.transaction_count, highRiskWallets: data.risk_distribution.high, mediumRiskWallets: data.risk_distribution.medium, lowRiskWallets: data.risk_distribution.low, systemStatus: data.status };
 }
 
-// ─── Wallets ──────────────────────────────────────────────────────────────────
-export async function getWallets(): Promise<Wallet[]> {
-  return apiFetch("/api/wallets", WALLETS);
+export async function getWallets(limit = 100): Promise<Wallet[]> {
+  const data = await request<{ wallets: RawWallet[] }>(`/wallets?limit=${limit}`);
+  return data.wallets.map(toWallet);
 }
 
-export async function getWallet(walletId: string): Promise<Wallet | null> {
-  return apiFetch(
-    `/api/wallets/${walletId}`,
-    WALLETS.find((w) => w.id === walletId) ?? null,
-  );
+export async function getWallet(walletId: string): Promise<Wallet> {
+  return toWallet(await request<RawWallet>(`/wallet/${encodeURIComponent(walletId)}`));
 }
 
-export async function getWalletRiskContributions(walletId: string): Promise<RiskContribution[]> {
-  // Currently only W012109 has detailed contributions; extend as needed.
-  return apiFetch(
-    `/api/wallets/${walletId}/contributions`,
-    walletId === "W012109" ? RISK_CONTRIBUTIONS_W012109 : [],
-  );
-}
-
-// ─── Alerts ───────────────────────────────────────────────────────────────────
 export async function getTopAlerts(limit = 20): Promise<Alert[]> {
-  return apiFetch("/api/alerts", ALERTS.slice(0, limit));
+  const data = await request<{ alerts: Array<{ wallet_id: string; risk_score: number; risk_band: "LOW" | "MEDIUM" | "HIGH"; reasons: string[]; timestamp: string; tx_count: number }> }>(`/alerts/top?limit=${limit}`);
+  return data.alerts.map((alert) => ({ id: alert.wallet_id, walletId: alert.wallet_id, riskScore: alert.risk_score, riskBand: alert.risk_band, reasons: alert.reasons, timestamp: alert.timestamp, status: "NEW", detectionType: alert.reasons[0] ?? "Wallet risk score", txCount: alert.tx_count }));
 }
 
-export async function getAlert(alertId: string): Promise<Alert | null> {
-  return apiFetch(
-    `/api/alerts/${alertId}`,
-    ALERTS.find((a) => a.id === alertId) ?? null,
-  );
+export async function getTransactions(walletId?: string, limit = 50): Promise<{ transactions: Transaction[]; total: number }> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (walletId) query.set("wallet", walletId);
+  const data = await request<{ transactions: Array<{ txid: string; timestamp: string; amount_btc: number; fee_btc: number; input_wallet: string; output_wallet: string; sender_risk_score: number | null; sender_risk_band: "LOW" | "MEDIUM" | "HIGH" | null; sender_reason: string | null }>; total: number }>(`/transactions?${query}`);
+  return { total: data.total, transactions: data.transactions.map((transaction) => ({ txid: transaction.txid, timestamp: transaction.timestamp, amount: transaction.amount_btc, fee: transaction.fee_btc, inputAddresses: [transaction.input_wallet], outputAddresses: [transaction.output_wallet], riskScore: transaction.sender_risk_score ?? 0, flagged: transaction.sender_risk_band === "HIGH", detectionReason: transaction.sender_reason ?? undefined })) };
 }
 
-// ─── Transactions ─────────────────────────────────────────────────────────────
-export async function getTransactions(walletId?: string): Promise<Transaction[]> {
-  const path = walletId ? `/api/transactions?wallet=${walletId}` : "/api/transactions";
-  const fallback = walletId
-    ? TRANSACTIONS.filter(
-        (t) =>
-          t.inputAddresses.includes(walletId) ||
-          t.outputAddresses.includes(walletId),
-      )
-    : TRANSACTIONS;
-  return apiFetch(path, fallback);
+export async function getWalletNetwork(walletId?: string): Promise<{ nodes: NetworkNode[]; edges: NetworkEdge[]; focusWalletId: string }> {
+  const data = await request<{ focus_wallet_id: string; nodes: Array<{ wallet_id: string; risk_score: number | null; risk_band: "LOW" | "MEDIUM" | "HIGH" | null; connections: number }>; edges: Array<{ source: string; target: string; direction: "incoming" | "outgoing"; amount_btc: number }> }>(`/graph${walletId ? `?focus=${encodeURIComponent(walletId)}` : ""}`);
+  return { focusWalletId: data.focus_wallet_id, nodes: data.nodes.map((node) => ({ id: node.wallet_id, type: "wallet", riskBand: node.risk_band ?? "LOW", riskScore: node.risk_score ?? 0, label: node.wallet_id, connections: node.connections })), edges: data.edges.map((edge, index) => ({ id: `${edge.source}-${edge.target}-${index}`, source: edge.source, target: edge.target, amount: edge.amount_btc, direction: edge.direction === "outgoing" ? "out" : "in" })) };
 }
 
-// ─── Network Graph ────────────────────────────────────────────────────────────
-export async function getWalletNetwork(walletId?: string): Promise<{
-  nodes: NetworkNode[];
-  edges: NetworkEdge[];
-}> {
-  const path = walletId ? `/api/graph?focus=${walletId}` : "/api/graph";
-  return apiFetch(path, { nodes: NETWORK_NODES, edges: NETWORK_EDGES });
-}
-
-// ─── Network Intelligence ─────────────────────────────────────────────────────
 export async function getNetworkIntelligence(): Promise<NetworkIntelligenceSummary> {
-  return apiFetch("/api/network-intel", NETWORK_INTEL);
+  const data = await request<{ observed_ip_count: number; country_count: number; high_risk_ip_count: number; asn_count: number; countries: Array<{ country: string; ip_count: number; transaction_count: number; high_risk_transaction_count: number; risk_band: "LOW" | "HIGH" }> }>("/network-intel");
+  return { observedIPs: data.observed_ip_count, countries: data.country_count, suspiciousIPs: data.high_risk_ip_count, asns: data.asn_count, geoEntries: data.countries.map((country) => ({ country: country.country, flag: "", ips: country.ip_count, transactions: country.transaction_count, suspicious: country.high_risk_transaction_count, riskBand: country.risk_band })) };
 }
 
-// ─── AI Models ────────────────────────────────────────────────────────────────
 export async function getModelEvaluations(): Promise<ModelEvaluation[]> {
-  return apiFetch("/api/models/performance", MODEL_EVALUATIONS);
+  const data = await request<{ evaluations: Array<{ model_name: string; roc_auc?: number; pr_auc?: number; precision_at_5?: number; recall_at_5?: number; evaluation_source: string }> }>("/models/performance");
+  return data.evaluations.map((model) => ({ modelName: model.model_name, rocAuc: model.roc_auc, prAuc: model.pr_auc, precisionAt5: model.precision_at_5, recallAt5: model.recall_at_5, lastEvaluated: model.evaluation_source, version: "offline evaluation" }));
 }
 
-// ─── Analytics ────────────────────────────────────────────────────────────────
 export async function getAnalytics(): Promise<AnalyticsSummary> {
-  return apiFetch("/api/analytics", ANALYTICS_SUMMARY);
+  const data = await request<{ wallet_count: number; transaction_count: number; risk_distribution: AnalyticsSummary["riskDistribution"]; transaction_timeline: Array<{ date: string; low_risk_sender_transactions: number; medium_risk_sender_transactions: number; high_risk_sender_transactions: number }>; monthly_wallet_risk_distribution: AnalyticsSummary["monthlyRiskTrend"] }>("/analytics");
+  return { totalWallets: data.wallet_count, totalTransactions: data.transaction_count, riskDistribution: data.risk_distribution, transactionTimeline: data.transaction_timeline.map((row) => ({ date: row.date, normal: row.low_risk_sender_transactions, suspicious: row.medium_risk_sender_transactions, flagged: row.high_risk_sender_transactions })), monthlyRiskTrend: data.monthly_wallet_risk_distribution, modelComparison: await getModelEvaluations() };
 }
 
-// ─── Activity ─────────────────────────────────────────────────────────────────
 export async function getActivity(): Promise<ActivityEvent[]> {
-  return apiFetch("/api/activity", ACTIVITY_EVENTS);
+  const data = await request<{ events: Array<{ id: string; timestamp: string; type: "detection"; entity_id: string; description: string; risk_band: "HIGH"; risk_score: number }> }>("/activity");
+  return data.events.map((event) => ({ id: event.id, timestamp: event.timestamp, type: event.type, entityId: event.entity_id, description: event.description, riskBand: event.risk_band, riskScore: event.risk_score }));
 }

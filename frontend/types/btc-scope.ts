@@ -1,8 +1,7 @@
 /**
  * BTC-SCOPE TypeScript Type Definitions
  * Defines interfaces for all domain entities.
- * The mock-data layer and API layer both conform to these types,
- * so replacing mock data with real FastAPI responses requires no UI changes.
+ * The FastAPI client maps the existing processed CSV outputs to these types.
  */
 
 export type RiskBand = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -22,26 +21,30 @@ export interface BehavioralFeatures {
   rapidActivityScore: number;     // 0-1
   fanInRatio: number;
   fanOutRatio: number;
-  dormancyPeriods: number;
-  amountVariance: number;         // 0-1
+  dormancyPeriods?: number;
+  amountVariance?: number;         // 0-1
 }
 
 export interface GraphFeatures {
   degree: number;
   inDegree: number;
   outDegree: number;
-  clusteringCoefficient: number;  // 0-1
-  betweennessCentrality: number;  // 0-1
-  pageRank: number;               // 0-1
-  communityId: number;
-  connectedComponents: number;
+  clusteringCoefficient?: number;  // not exposed by the current graph output
+  betweennessCentrality?: number;
+  pageRank?: number;
+  communityId?: number;
+  connectedComponents?: number;
+  twoHopNeighbors?: number;
+  fanInScore?: number;
+  fanOutScore?: number;
+  chainScore?: number;
 }
 
 export interface AnomalyScores {
   statisticalAnomaly: number;  // 0-100
   isolationForest: number;     // 0-1 (higher = more anomalous)
   overallRisk: number;         // 0-100
-  modelConfidence: number;     // 0-1
+  modelConfidence?: number;    // not exposed by the current model output
 }
 
 export interface Wallet {
@@ -194,6 +197,6 @@ export interface SystemStats {
   highRiskWallets: number;
   mediumRiskWallets: number;
   lowRiskWallets: number;
-  activeInvestigations: number;
+  activeInvestigations?: number;
   systemStatus: "OPERATIONAL" | "DEGRADED" | "MAINTENANCE";
 }

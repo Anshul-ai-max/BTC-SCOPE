@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -12,7 +12,7 @@ import {
   Info,
 } from "lucide-react";
 import { RiskBadge, SectionHeader, DatasetBadge } from "@/components/ui";
-import { ALERTS } from "@/lib/mock-data/alerts";
+import { getTopAlerts } from "@/lib/api";
 import { getRiskColor, formatRelativeTime } from "@/lib/utils";
 import type { Alert, RiskBand, AlertStatus } from "@/types/btc-scope";
 import { cn } from "@/lib/utils";
@@ -26,13 +26,19 @@ const STATUS_CONFIG: Record<AlertStatus, { label: string; color: string; bg: str
 };
 
 export default function AlertsPage() {
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<RiskBand | "ALL">("ALL");
   const [statusFilter, setStatusFilter] = useState<AlertStatus | "ALL">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"riskScore" | "timestamp">("riskScore");
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
 
-  const filtered = ALERTS.filter((a) => {
+  useEffect(() => {
+    getTopAlerts(100).then(setAlerts).catch((requestError: Error) => setError(requestError.message));
+  }, []);
+
+  const filtered = alerts.filter((a) => {
     if (filter !== "ALL" && a.riskBand !== filter) return false;
     if (statusFilter !== "ALL" && a.status !== statusFilter) return false;
     if (
@@ -47,10 +53,10 @@ export default function AlertsPage() {
   });
 
   const counts = {
-    HIGH:   ALERTS.filter((a) => a.riskBand === "HIGH").length,
-    MEDIUM: ALERTS.filter((a) => a.riskBand === "MEDIUM").length,
-    LOW:    ALERTS.filter((a) => a.riskBand === "LOW").length,
-    NEW:    ALERTS.filter((a) => a.status === "NEW").length,
+    HIGH:   alerts.filter((a) => a.riskBand === "HIGH").length,
+    MEDIUM: alerts.filter((a) => a.riskBand === "MEDIUM").length,
+    LOW:    alerts.filter((a) => a.riskBand === "LOW").length,
+    NEW:    alerts.filter((a) => a.status === "NEW").length,
   };
 
   return (
@@ -73,6 +79,8 @@ export default function AlertsPage() {
           </div>
           <DatasetBadge />
         </div>
+
+        {error && <div className="px-3 py-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] text-[#b91c1c] text-xs">{error}</div>}
 
         {/* Stat strip */}
         <div className="grid grid-cols-4 gap-3 mb-4">

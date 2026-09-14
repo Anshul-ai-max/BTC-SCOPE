@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, Suspense } from "react";
+import { useState, useCallback, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ReactFlow, {
@@ -17,10 +17,9 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import { Search, ShieldAlert, X, Info } from "lucide-react";
 import { RiskBadge, RiskBar } from "@/components/ui";
-import { NETWORK_NODES, NETWORK_EDGES } from "@/lib/mock-data/network";
-import { WALLETS } from "@/lib/mock-data/wallets";
+import { getWallet, getWalletNetwork } from "@/lib/api";
 import { getRiskColor, getRiskBgColor, getRiskBorderColor, getRiskGlow } from "@/lib/utils";
-import type { NetworkNode } from "@/types/btc-scope";
+import type { NetworkEdge, NetworkNode, Wallet } from "@/types/btc-scope";
 import { cn } from "@/lib/utils";
 
 // ─── Custom wallet node (dark investigation workspace) ──────────────────────
@@ -86,33 +85,18 @@ function WalletNode({ data }: { data: NetworkNode & { selected?: boolean } }) {
 const nodeTypes: NodeTypes = { wallet: WalletNode };
 
 // ─── Layout positions ────────────────────────────────────────────────────────
-const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
-  W012109: { x: 400, y: 300 },
-  W017332: { x: 220, y: 160 },
-  W008834: { x: 620, y: 180 },
-  W002281: { x: 80,  y: 280 },
-  W003214: { x: 640, y: 400 },
-  W019872: { x: 200, y: 440 },
-  W015678: { x: 140, y: 430 },
-  W006677: { x: 420, y: 520 },
-  W014509: { x: 730, y: 280 },
-  W011445: { x: 540, y: 580 },
-  W007123: { x: 300, y: 590 },
-  W021001: { x: 350, y: 690 },
-};
-
-function buildNodes(selectedId: string | null): Node[] {
-  return NETWORK_NODES.map((n) => ({
+function buildNodes(source: NetworkNode[], selectedId: string | null): Node[] {
+  return source.map((n, index) => ({
     id: n.id,
     type: "wallet",
-    position: NODE_POSITIONS[n.id] ?? { x: Math.random() * 600, y: Math.random() * 500 },
+    position: index === 0 ? { x: 400, y: 300 } : { x: 400 + Math.cos((index - 1) * (Math.PI * 2 / Math.max(1, source.length - 1))) * 260, y: 300 + Math.sin((index - 1) * (Math.PI * 2 / Math.max(1, source.length - 1))) * 220 },
     data: { ...n, selected: n.id === selectedId },
     selected: n.id === selectedId,
   }));
 }
 
-function buildEdges(): import("reactflow").Edge[] {
-  return NETWORK_EDGES.map((e) => ({
+function buildEdges(source: NetworkEdge[]): import("reactflow").Edge[] {
+  return source.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
@@ -137,12 +121,30 @@ function NetworkContent() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(focusId ?? "W012109");
   const [searchQuery, setSearchQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
+  const [networkNodes, setNetworkNodes] = useState<NetworkNode[]>([]);
+  const [networkEdges, setNetworkEdges] = useState<NetworkEdge[]>([]);
+  const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(buildNodes(selectedNodeId));
-  const [edges, , onEdgesChange] = useEdgesState(buildEdges());
+  useEffect(() => {
+    const focus = focusId ?? selectedNodeId ?? "W012109";
+    setError(null);
+    getWalletNetwork(focus).then((graph) => {
+      setNetworkNodes(graph.nodes); setNetworkEdges(graph.edges); setSelectedNodeId(graph.focusWalletId);
+      setNodes(buildNodes(graph.nodes, graph.focusWalletId)); setEdges(buildEdges(graph.edges));
+    }).catch((requestError: Error) => setError(requestError.message));
+  // The graph is intentionally refocused only from the route or explicit list selection.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
 
-  const selectedNode = NETWORK_NODES.find((n) => n.id === selectedNodeId);
-  const selectedWallet = WALLETS.find((w) => w.id === selectedNodeId);
+  useEffect(() => {
+    if (!selectedNodeId) { setSelectedWallet(null); return; }
+    getWallet(selectedNodeId).then(setSelectedWallet).catch((requestError: Error) => setError(requestError.message));
+  }, [selectedNodeId]);
+
+  const selectedNode = networkNodes.find((node) => node.id === selectedNodeId);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -155,15 +157,17 @@ function NetworkContent() {
   );
 
   const filteredNodes = useMemo(() => {
-    return NETWORK_NODES.filter((n) => {
+    return networkNodes.filter((n) => {
       if (riskFilter !== "ALL" && n.riskBand !== riskFilter) return false;
       if (searchQuery && !n.id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [riskFilter, searchQuery]);
+  }, [networkNodes, riskFilter, searchQuery]);
 
   return (
     <div className="inv-workspace flex h-full overflow-hidden bg-[#0c1220]">
+
+      {error && <div className="absolute top-4 left-4 z-50 px-3 py-2 rounded-lg border border-[#7f1d1d] bg-[#2a1015] text-[#fca5a5] text-xs">{error}</div>}
 
       {/* ─── Left entity list panel ──────────────────── */}
       <div className="w-60 flex-shrink-0 border-r border-[#1e2d3d] flex flex-col bg-[#111827] overflow-hidden">
@@ -289,9 +293,9 @@ function NetworkContent() {
           <span className="w-1.5 h-1.5 rounded-full bg-[#059669] flex-shrink-0" />
           <span className="text-[#7d8fa3] text-xs">GRAPH ENGINE</span>
           <span className="text-[#3f5168] text-xs">·</span>
-          <span className="text-[#7d8fa3] text-xs mono">{NETWORK_NODES.length} nodes</span>
+          <span className="text-[#7d8fa3] text-xs mono">{networkNodes.length} nodes</span>
           <span className="text-[#3f5168] text-xs">·</span>
-          <span className="text-[#7d8fa3] text-xs mono">{NETWORK_EDGES.length} edges</span>
+          <span className="text-[#7d8fa3] text-xs mono">{networkEdges.length} edges</span>
         </div>
 
         {/* Disclaimer */}

@@ -1,12 +1,17 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Globe, Info } from "lucide-react";
-import { NETWORK_INTEL } from "@/lib/mock-data/network-intel";
+import { getNetworkIntelligence } from "@/lib/api";
 import { getRiskColor } from "@/lib/utils";
 import { DatasetBadge } from "@/components/ui";
+import type { NetworkIntelligenceSummary } from "@/types/btc-scope";
 
 export default function NetworkIntelPage() {
-  const { observedIPs, countries, suspiciousIPs, asns, geoEntries } = NETWORK_INTEL;
+  const [networkIntel, setNetworkIntel] = useState<NetworkIntelligenceSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { getNetworkIntelligence().then(setNetworkIntel).catch((requestError: Error) => setError(requestError.message)); }, []);
+  const { observedIPs = 0, countries = 0, suspiciousIPs = 0, asns = 0, geoEntries = [] } = networkIntel ?? {};
 
   return (
     <div className="p-5 space-y-5 min-h-full page-enter">
@@ -22,6 +27,7 @@ export default function NetworkIntelPage() {
         </div>
         <DatasetBadge />
       </div>
+      {error && <div className="px-3 py-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] text-[#b91c1c] text-xs">{error}</div>}
 
       {/* Geolocation disclaimer */}
       <div className="flex items-start gap-3 p-3.5 rounded-lg border border-[#fde68a] bg-[#fffbeb]">
@@ -38,7 +44,7 @@ export default function NetworkIntelPage() {
         {[
           { label: "Observed IPs",    value: observedIPs.toLocaleString(),    color: "#0f76ad" },
           { label: "Countries",       value: countries.toString(),             color: "#6366f1" },
-          { label: "Suspicious IPs",  value: suspiciousIPs.toLocaleString(),   color: "#dc2626" },
+          { label: "High-risk IPs",   value: suspiciousIPs.toLocaleString(),   color: "#dc2626" },
           { label: "ASNs",            value: asns.toString(),                  color: "#d97706" },
         ].map(({ label, value, color }) => (
           <div key={label} className="card p-4 text-center" style={{ borderTopColor: color, borderTopWidth: 2 }}>
@@ -51,7 +57,7 @@ export default function NetworkIntelPage() {
       {/* Country table */}
       <div className="card overflow-hidden">
         <div className="grid grid-cols-[1fr_80px_110px_110px_100px] gap-3 px-5 py-2.5 border-b border-[#f0f2f5] bg-[#f7f8fa]">
-          {["COUNTRY", "IPs", "TRANSACTIONS", "SUSPICIOUS", "RISK"].map((h) => (
+          {["COUNTRY", "IPs", "TRANSACTIONS", "HIGH-RISK", "RISK"].map((h) => (
             <span key={h} className="section-label">{h}</span>
           ))}
         </div>
