@@ -22,33 +22,7 @@ The system is designed around the **SIH26146 — AI-Powered Monitoring & Analysi
 - Read-only FastAPI backend
 - Next.js investigation dashboard
 - Offline-first architecture
-- Linux deployment target
-
-## SIH26146 Requirement Coverage
-
-| Problem Statement Requirement | BTC-SCOPE Implementation |
-|---|---|
-| Bulk transaction/network metadata | Synthetic Bitcoin transaction and network datasets |
-| Timestamp | Implemented |
-| Source/destination IP | Implemented in network observations |
-| Source/destination port | Implemented in network observations |
-| TXID | Implemented |
-| Wallet addresses | Represented as stable synthetic wallet IDs |
-| Transaction amounts | Implemented |
-| Transaction fee | Implemented |
-| Script type | Implemented |
-| Country / ASN | Implemented in synthetic network observations |
-| Wallet-IP correlation | `wallet_ip_links.csv` |
-| Entity / transaction graph | NetworkX directed transaction graph |
-| Behavioral analysis | Wallet-level behavioral features |
-| Graph analysis | Wallet-level graph features |
-| AI/ML anomaly detection | Isolation Forest |
-| Ranked alerts | Risk-scored wallet alert queue |
-| Explainability | Contributing reasons for wallet risk scores |
-| Dashboard | Next.js investigation dashboard |
-| API | Read-only FastAPI service |
-| Offline architecture | Local datasets + local processing |
-| Linux deployment | Target platform; deployment packaging and testing planned |
+- Linux deployment
 
 ## Repository Layout
 
@@ -249,52 +223,6 @@ The repository includes a Next.js dashboard for:
 - Network/link analysis
 
 Frontend development and production deployment commands are defined in `frontend/package.json`.
-
 The frontend is intended to communicate with the local FastAPI service during offline deployment.
 
-## Current Prototype Status
-
-### Implemented
-
-- Synthetic Bitcoin transaction and network dataset generation
-- Network observations with IP, port, ASN, and country fields
-- Wallet-IP relationship modelling
-- Behavioral feature engineering
-- Transaction graph construction
-- Graph feature extraction
-- Statistical anomaly baseline
-- Isolation Forest anomaly detection
-- Model evaluation
-- Explainable risk scoring
-- Ranked alert generation
-- Wallet network investigation endpoint
-- FastAPI backend
-- Next.js dashboard
-
-### Next Deployment Step
-
-The post-submission deployment phase will package and test the complete BTC-SCOPE pipeline for **Ubuntu/Linux offline execution**, including a reproducible environment setup and end-to-end run instructions.
-
-## Project Limitations
-
-- The current benchmark uses synthetic data.
-- The Bitcoin transaction representation is simplified for V1 prototyping.
-- Synthetic evaluation results should not be interpreted as real-world AML performance.
-- Risk scores identify activity for review; they do not establish criminality or wallet ownership.
-- Real-world deployment would require validation on appropriate datasets, stronger data ingestion/correlation, and operational security controls.
-
-## Research Direction
-
-BTC-SCOPE is informed by research in:
-
-- Virtual-asset AML/CFT and investigative risk
-- Bitcoin transaction graph analysis
-- Graph-based financial forensics
-- Unsupervised anomaly detection
-- Explainable investigative analytics
-
-See the project's presentation for the selected research references and technical mapping.
-
-## License / Project Status
-
-BTC-SCOPE is currently a prototype developed for research, demonstration, and hackathon evaluation.
+ 
