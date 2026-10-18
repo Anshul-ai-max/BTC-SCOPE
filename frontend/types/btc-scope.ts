@@ -21,6 +21,16 @@ export interface BehavioralFeatures {
   rapidActivityScore: number;     // 0-1
   fanInRatio: number;
   fanOutRatio: number;
+  transactionCount?: number;
+  incomingTransactionCount?: number;
+  outgoingTransactionCount?: number;
+  sentBTC?: number;
+  receivedBTC?: number;
+  uniqueCounterparties?: number;
+  rapidTransactionPairs15m?: number;
+  ipCount?: number;
+  countryCount?: number;
+  asnCount?: number;
   dormancyPeriods?: number;
   amountVariance?: number;         // 0-1
 }
@@ -29,6 +39,7 @@ export interface GraphFeatures {
   degree: number;
   inDegree: number;
   outDegree: number;
+  neighborCount?: number;
   clusteringCoefficient?: number;  // not exposed by the current graph output
   betweennessCentrality?: number;
   pageRank?: number;

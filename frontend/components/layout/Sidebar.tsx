@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getSelectedWalletId, WALLET_SELECTION_EVENT } from "@/lib/wallet-selection";
 import {
   LayoutDashboard,
   Brain,
@@ -16,7 +17,6 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
-  ShieldCheck,
   Database,
   Search,
 } from "lucide-react";
@@ -58,9 +58,46 @@ const NAV_ITEMS = [
   },
 ];
 
+function BTCScopeLogo() {
+  return (
+    <svg
+      viewBox="0 0 28 28"
+      aria-hidden="true"
+      className="w-5 h-5"
+      fill="none"
+    >
+      <path
+        d="M14 3.5 22 6.4v6.2c0 5.1-3.2 9.5-8 11.9-4.8-2.4-8-6.8-8-11.9V6.4L14 3.5Z"
+        stroke="#0f76ad"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.7 11.2h4.5c1.1 0 2 .7 2 1.7s-.8 1.7-2 1.7h-4.5m0 0h5c1.2 0 2.2.8 2.2 1.9s-.9 1.9-2.2 1.9h-5V9.6"
+        stroke="#0f76ad"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12.3 8.4v2M15.1 8.4v2M12.3 18.4v1.8M15.1 18.4v1.8" stroke="#0f76ad" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M7.7 11.1 10.7 12.7M17.8 15.6l2.7 1.4" stroke="#5b6f85" strokeWidth="1" strokeLinecap="round" />
+      <circle cx="7.2" cy="10.8" r="1.15" fill="#0f76ad" />
+      <circle cx="20.9" cy="17.2" r="1.15" fill="#0f76ad" />
+    </svg>
+  );
+}
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const refresh = () => setSelectedWalletId(getSelectedWalletId());
+    refresh();
+    window.addEventListener(WALLET_SELECTION_EVENT, refresh);
+    return () => window.removeEventListener(WALLET_SELECTION_EVENT, refresh);
+  }, []);
 
   return (
     <aside
@@ -80,7 +117,7 @@ export default function Sidebar() {
           className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center"
           style={{ background: "rgba(15,118,173,0.10)", border: "1px solid rgba(15,118,173,0.20)" }}
         >
-          <ShieldCheck className="w-3.5 h-3.5 text-[#0f76ad]" />
+          <BTCScopeLogo />
         </div>
 
         {!collapsed && (
@@ -88,12 +125,6 @@ export default function Sidebar() {
             <p className="text-[#111827] font-bold text-[13px] tracking-wide leading-none">
               BTC-SCOPE
             </p>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#059669] flex-shrink-0" />
-              <span className="text-[#059669] text-[9px] font-semibold tracking-[0.12em]">
-                DEMO MODE
-              </span>
-            </div>
           </div>
         )}
       </div>
@@ -110,6 +141,11 @@ export default function Sidebar() {
             {label && collapsed && <div className="h-px mx-2 mb-2 bg-[#e4e7ec]" />}
             <div className="space-y-px">
               {items.map(({ href, label: itemLabel, icon: Icon }) => {
+                const selectedHref = href === "/blockchain" && selectedWalletId
+                  ? `/blockchain?wallet=${selectedWalletId}`
+                  : href === "/network" && selectedWalletId
+                  ? `/network?focus=${selectedWalletId}`
+                  : href;
                 // Match /blockchain or /wallet routes for Wallet Investigation
                 const isActive =
                   pathname === href ||
@@ -117,7 +153,7 @@ export default function Sidebar() {
                 return (
                   <Link
                     key={href}
-                    href={href}
+                    href={selectedHref}
                     title={collapsed ? itemLabel : undefined}
                     className={cn(
                       "nav-item group relative",

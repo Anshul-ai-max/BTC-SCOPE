@@ -3,11 +3,12 @@
 import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { getSelectedWalletId } from "@/lib/wallet-selection";
 
 function BlockchainRedirect() {
   const params = useSearchParams();
   const router = useRouter();
-  const walletId = params.get("wallet") ?? "W012109";
+  const walletId = params.get("wallet") ?? getSelectedWalletId() ?? "W012109";
 
   useEffect(() => {
     router.replace(`/wallet/${walletId}`);

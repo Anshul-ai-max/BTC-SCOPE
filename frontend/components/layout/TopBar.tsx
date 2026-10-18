@@ -11,7 +11,8 @@ import {
   ShieldAlert,
   ArrowRight,
 } from "lucide-react";
-import { getTopAlerts, getWallets } from "@/lib/api";
+import { getTopAlerts, getWallet, getWallets } from "@/lib/api";
+import { setSelectedWalletId } from "@/lib/wallet-selection";
 import type { Alert, Wallet } from "@/types/btc-scope";
 import { getRiskColor } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ export default function TopBar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [exactWallet, setExactWallet] = useState<Wallet | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -45,8 +47,16 @@ export default function TopBar() {
     getTopAlerts(20).then(setAlerts).catch(() => setAlerts([]));
   }, []);
 
+  useEffect(() => {
+    const walletId = query.trim().toUpperCase();
+    if (!/^W\d{6}$/.test(walletId)) { setExactWallet(null); return; }
+    let active = true;
+    getWallet(walletId).then((wallet) => { if (active) setExactWallet(wallet); }).catch(() => { if (active) setExactWallet(null); });
+    return () => { active = false; };
+  }, [query]);
+
   const filteredWallets = query.trim()
-    ? wallets.filter((w) => w.id.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
+    ? exactWallet ? [exactWallet] : wallets.filter((w) => w.id.toLowerCase().includes(query.toLowerCase())).slice(0, 4)
     : [];
 
   const filteredAlerts = query.trim()
@@ -227,7 +237,7 @@ export default function TopBar() {
                       <Link
                         key={wallet.id}
                         href={`/wallet/${wallet.id}`}
-                        onClick={() => { setSearchOpen(false); setQuery(""); }}
+                        onClick={() => { setSelectedWalletId(wallet.id); setSearchOpen(false); setQuery(""); }}
                         className="flex items-center gap-3 px-4 py-3 hover:bg-[#f7f8fa] transition-colors border-b border-[#f0f2f5]"
                       >
                         <div className="flex-1 min-w-0">

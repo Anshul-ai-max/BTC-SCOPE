@@ -13,11 +13,14 @@ import ReactFlow, {
   useEdgesState,
   BackgroundVariant,
   MarkerType,
+  Handle,
+  Position,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { Search, ShieldAlert, X, Info } from "lucide-react";
 import { RiskBadge, RiskBar } from "@/components/ui";
 import { getWallet, getWalletNetwork } from "@/lib/api";
+import { getSelectedWalletId, setSelectedWalletId } from "@/lib/wallet-selection";
 import { getRiskColor, getRiskBgColor, getRiskBorderColor, getRiskGlow } from "@/lib/utils";
 import type { NetworkEdge, NetworkNode, Wallet } from "@/types/btc-scope";
 import { cn } from "@/lib/utils";
@@ -49,8 +52,30 @@ function WalletNode({ data }: { data: NetworkNode & { selected?: boolean } }) {
         animation: data.selected && data.riskBand === "HIGH"
           ? "nodePulse 2s ease-in-out infinite"
           : "none",
-      }}
-    >
+        }}
+      >
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{
+          width: 7,
+          height: 7,
+          background: "#67e8f9",
+          border: "1px solid #0c1220",
+          boxShadow: "0 0 6px rgba(103,232,249,0.65)",
+        }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{
+          width: 7,
+          height: 7,
+          background: "#67e8f9",
+          border: "1px solid #0c1220",
+          boxShadow: "0 0 6px rgba(103,232,249,0.65)",
+        }}
+      />
       <span
         style={{
           color,
@@ -102,23 +127,29 @@ function buildEdges(source: NetworkEdge[]): import("reactflow").Edge[] {
     target: e.target,
     type: "default",
     animated: false,
-    style: { stroke: "rgba(56,189,248,0.65)", strokeWidth: 2 },
+    style: {
+      stroke: "#67e8f9",
+      strokeWidth: 3,
+      filter: "drop-shadow(0 0 5px rgba(103,232,249,0.55))",
+    },
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: "rgba(56,189,248,0.80)",
-      width: 12,
-      height: 12,
+      color: "#67e8f9",
+      width: 18,
+      height: 18,
+      strokeWidth: 2,
     },
     label: e.amount ? `₿${e.amount?.toFixed(2)}` : undefined,
-    labelStyle: { fill: "#3f5168", fontSize: 9, fontFamily: "monospace" },
-    labelBgStyle: { fill: "#0c1220", fillOpacity: 0.8 },
+    labelStyle: { fill: "#dffafe", fontSize: 9, fontFamily: "monospace", fontWeight: 700 },
+    labelBgStyle: { fill: "#0c1220", fillOpacity: 0.95 },
+    labelBgPadding: [4, 2],
   }));
 }
 
 function NetworkContent() {
   const params = useSearchParams();
   const focusId = params.get("focus");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(focusId ?? "W012109");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
   const [networkNodes, setNetworkNodes] = useState<NetworkNode[]>([]);
@@ -129,10 +160,10 @@ function NetworkContent() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   useEffect(() => {
-    const focus = focusId ?? selectedNodeId ?? "W012109";
+    const focus = focusId ?? getSelectedWalletId() ?? "W012109";
     setError(null);
     getWalletNetwork(focus).then((graph) => {
-      setNetworkNodes(graph.nodes); setNetworkEdges(graph.edges); setSelectedNodeId(graph.focusWalletId);
+      setSelectedWalletId(graph.focusWalletId); setNetworkNodes(graph.nodes); setNetworkEdges(graph.edges); setSelectedNodeId(graph.focusWalletId);
       setNodes(buildNodes(graph.nodes, graph.focusWalletId)); setEdges(buildEdges(graph.edges));
     }).catch((requestError: Error) => setError(requestError.message));
   // The graph is intentionally refocused only from the route or explicit list selection.
@@ -148,6 +179,7 @@ function NetworkContent() {
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      setSelectedWalletId(node.id);
       setSelectedNodeId(node.id);
       setNodes((nds) =>
         nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === node.id } }))
@@ -257,8 +289,13 @@ function NetworkContent() {
               </div>
             ))}
             <div className="flex items-center gap-2">
-              <span className="w-5 h-px flex-shrink-0" style={{ background: "rgba(56,189,248,0.5)" }} />
-              <span className="text-[#7d8fa3] text-[10px]">Transaction edge →</span>
+              <span className="relative w-6 h-px flex-shrink-0 bg-[#67e8f9] shadow-[0_0_6px_rgba(103,232,249,0.55)]">
+                <span className="absolute -right-0.5 -top-[3px] h-0 w-0 border-y-[3px] border-y-transparent border-l-[6px] border-l-[#67e8f9]" />
+              </span>
+              <span className="text-[#7d8fa3] text-[10px]">BTC flow: source → target</span>
+            </div>
+            <div className="pl-8 text-[#3f5168] text-[9px] leading-tight">
+              Incoming: neighbor → focus · Outgoing: focus → neighbor
             </div>
           </div>
         </div>

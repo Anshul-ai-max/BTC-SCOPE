@@ -31,6 +31,7 @@ import {
   EvidenceBar,
 } from "@/components/ui";
 import { getTransactions, getWallet, getWalletNetwork } from "@/lib/api";
+import { setSelectedWalletId } from "@/lib/wallet-selection";
 import type { NetworkNode, RiskContribution, Transaction, Wallet } from "@/types/btc-scope";
 import {
   getRiskColor,
@@ -48,9 +49,42 @@ const EVIDENCE_COLORS: Record<string, string> = {
   network:     "#34d399",
 };
 
+function indicatorEvidence(wallet: Wallet, reason: string): string {
+  const behavioral = wallet.behavioralFeatures;
+  const graph = wallet.graphFeatures;
+  const anomalies = wallet.anomalyScores;
+
+  switch (reason) {
+    case "Strong fan-in transaction pattern":
+      return `Fan-in score ${graph.fanInScore?.toFixed(3) ?? "0.000"} · ${graph.inDegree.toLocaleString()} incoming transactions`;
+    case "Strong fan-out transaction pattern":
+      return `Fan-out score ${graph.fanOutScore?.toFixed(3) ?? "0.000"} · ${graph.outDegree.toLocaleString()} outgoing transactions`;
+    case "Strong transaction-chain pattern":
+      return `Chain score ${graph.chainScore?.toFixed(3) ?? "0.000"} · ${graph.twoHopNeighbors?.toLocaleString() ?? "0"} two-hop wallets`;
+    case "Unusually rapid transaction activity":
+      return `${(behavioral.rapidTransactionPairs15m ?? 0).toLocaleString()} transaction pairs within 15 minutes`;
+    case "Unusually high transaction volume":
+      return `Sent ${formatBTC(behavioral.sentBTC ?? 0)} · received ${formatBTC(behavioral.receivedBTC ?? 0)}`;
+    case "Unusually high transaction activity":
+      return `${(behavioral.transactionCount ?? wallet.totalTransactions).toLocaleString()} transactions · ${behavioral.transactionFrequency.toFixed(1)}/day`;
+    case "High counterparty diversity":
+      return `${(behavioral.uniqueCounterparties ?? 0).toLocaleString()} unique counterparties · ${graph.neighborCount?.toLocaleString() ?? graph.degree.toLocaleString()} graph neighbors`;
+    case "Unusual network identity diversity":
+      return `${(behavioral.ipCount ?? 0).toLocaleString()} IPs · ${(behavioral.countryCount ?? 0).toLocaleString()} countries · ${(behavioral.asnCount ?? 0).toLocaleString()} ASNs`;
+    case "High wallet connectivity":
+      return `${graph.neighborCount?.toLocaleString() ?? graph.degree.toLocaleString()} graph neighbors · degree ${graph.degree.toLocaleString()}`;
+    case "Unusual combined behavioral profile":
+      return `Statistical anomaly score ${anomalies.statisticalAnomaly.toFixed(2)}/100`;
+    case "Unusual combined behavioral and graph profile":
+      return `Isolation Forest anomaly score ${anomalies.isolationForest.toFixed(4)}`;
+    default:
+      return `Risk score ${wallet.riskScore.toFixed(2)}/100`;
+  }
+}
+
 function WalletInvestigationContent() {
   const params = useParams();
-  const walletId = typeof params.walletId === "string" ? params.walletId : "W012109";
+  const walletId = typeof params.walletId === "string" ? params.walletId.toUpperCase() : "";
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [counterparties, setCounterparties] = useState<NetworkNode[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -59,8 +93,9 @@ function WalletInvestigationContent() {
 
   useEffect(() => {
     setWallet(null); setCounterparties([]); setTransactions([]); setError(null);
+    if (!walletId) { setError("A wallet ID is required."); return; }
     Promise.all([getWallet(walletId), getWalletNetwork(walletId), getTransactions(walletId, 100)])
-      .then(([nextWallet, network, transactionResponse]) => { setWallet(nextWallet); setCounterparties(network.nodes.filter((node) => node.id !== walletId)); setTransactions(transactionResponse.transactions); })
+      .then(([nextWallet, network, transactionResponse]) => { setSelectedWalletId(nextWallet.id); setWallet(nextWallet); setCounterparties(network.nodes.filter((node) => node.id !== walletId)); setTransactions(transactionResponse.transactions); })
       .catch((requestError: Error) => setError(requestError.message));
   }, [walletId]);
 
@@ -82,6 +117,9 @@ function WalletInvestigationContent() {
   };
 
   const riskColor = getRiskColor(wallet.riskBand);
+  const uniqueFlagReasons = wallet.flagReasons.filter(
+    (reason, index, reasons) => reasons.indexOf(reason) === index
+  );
 
   return (
     <div className="inv-workspace bg-[#0c1220] min-h-full p-5 space-y-5">
@@ -224,8 +262,8 @@ function WalletInvestigationContent() {
               <AlertTriangle className="w-4 h-4" style={{ color: riskColor }} />
             </div>
             <div>
-              <h2 className="text-[#e8edf5] font-bold text-base">WHY THIS WALLET WAS FLAGGED</h2>
-              <p className="text-[#7d8fa3] text-xs">Evidence hierarchy · feature contributions</p>
+              <h2 className="text-[#e8edf5] font-bold text-base">RISK INDICATORS</h2>
+              <p className="text-[#7d8fa3] text-xs">Evidence contributing to the wallet&apos;s risk assessment</p>
             </div>
           </div>
 
@@ -264,13 +302,16 @@ function WalletInvestigationContent() {
             </div>
           ) : (
             <div className="space-y-3">
-              {wallet.flagReasons.map((reason, i) => (
+              {uniqueFlagReasons.map((reason, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-[#1e2d3d]">
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: riskColor }} />
-                  <p className="text-[#e8edf5] text-sm">{reason}</p>
+                  <div>
+                    <p className="text-[#e8edf5] text-sm">{reason}</p>
+                    <p className="mono text-[10px] text-[#52657a] mt-0.5">{indicatorEvidence(wallet, reason)}</p>
+                  </div>
                 </div>
               ))}
-              {wallet.flagReasons.length === 0 && (
+              {uniqueFlagReasons.length === 0 && (
                 <p className="text-[#7d8fa3] text-sm italic">No flag reasons recorded.</p>
               )}
             </div>
